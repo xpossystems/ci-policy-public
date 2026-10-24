@@ -33,7 +33,7 @@ jobs:
           fetch-depth: 0
       - name: Validate the feature quality contract
         id: plan
-        uses: xpossystems/ci-policy-public@817131008616c88c56ce1376b0371cc216509e61
+        uses: xpossystems/ci-policy-public@48c13e944ff347c3fec50b72f366107c37d097e5
         with:
           mode: plan
           root: ${{ github.workspace }}
@@ -54,7 +54,7 @@ jobs:
         with:
           python-version: ${{ needs.plan.outputs.python_version }}
       - name: Run unit, integration, and security suites
-        uses: xpossystems/ci-policy-public@817131008616c88c56ce1376b0371cc216509e61
+        uses: xpossystems/ci-policy-public@48c13e944ff347c3fec50b72f366107c37d097e5
         with:
           mode: run
           root: ${{ github.workspace }}
@@ -167,7 +167,7 @@ jobs:
           name: feature-quality-evidence
           path: ${{ runner.temp }}/quality-reports
       - name: Verify reports and TDD/break-test evidence
-        uses: xpossystems/ci-policy-public@817131008616c88c56ce1376b0371cc216509e61
+        uses: xpossystems/ci-policy-public@48c13e944ff347c3fec50b72f366107c37d097e5
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
