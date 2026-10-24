@@ -33,7 +33,7 @@ jobs:
           fetch-depth: 0
       - name: Validate the feature quality contract
         id: plan
-        uses: xpossystems/ci-policy-public@c45b756e5d4340ef0010c63028682ff8f170f013
+        uses: xpossystems/ci-policy-public@817131008616c88c56ce1376b0371cc216509e61
         with:
           mode: plan
           root: ${{ github.workspace }}
@@ -54,7 +54,7 @@ jobs:
         with:
           python-version: ${{ needs.plan.outputs.python_version }}
       - name: Run unit, integration, and security suites
-        uses: xpossystems/ci-policy-public@c45b756e5d4340ef0010c63028682ff8f170f013
+        uses: xpossystems/ci-policy-public@817131008616c88c56ce1376b0371cc216509e61
         with:
           mode: run
           root: ${{ github.workspace }}
@@ -97,6 +97,7 @@ jobs:
           TRIVY_IGNOREFILE: ${{ runner.temp }}/feature-quality-trivy/ignore
           TRIVY_SECRET_CONFIG: ${{ runner.temp }}/feature-quality-trivy/secret.yaml
           TRIVY_IGNORE_UNFIXED: 'false'
+          TRIVY_FILE_PATTERNS: 'pip:(^|/)(requirements/[^/]+\.(txt|lock)|requirements[^/]*\.txt)$'
         with:
           scan-type: fs
           scan-ref: .
@@ -166,7 +167,7 @@ jobs:
           name: feature-quality-evidence
           path: ${{ runner.temp }}/quality-reports
       - name: Verify reports and TDD/break-test evidence
-        uses: xpossystems/ci-policy-public@c45b756e5d4340ef0010c63028682ff8f170f013
+        uses: xpossystems/ci-policy-public@817131008616c88c56ce1376b0371cc216509e61
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
