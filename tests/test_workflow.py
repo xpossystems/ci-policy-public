@@ -11,6 +11,12 @@ adding full checkout history and the trusted base SHA made all 16 tests pass.
 Baseline follow-up: new generator/CLI tests failed before implementation
 (3 failures and 3 missing-method errors). Shared plan/run fragments and the
 pinned repository caller made the expanded 21-test suite pass.
+Docker ignore parser follow-up: four contract assertions failed before splitting
+the scans; all 24 workflow tests then passed. Trivy 0.70.0 also executed the
+generated scanner options against a local Dockerfile.dockerignore containing a
+synthetic credential and a Dockerfile with a root user. Both passes returned
+exit 1 despite candidate-controlled suppression files; the parser error was
+gone and the API's 14 existing high/critical findings remained visible.
 Run: python3 -m unittest discover -s tests -p test_workflow.py -v
 No live Actions run or external pentest is claimed by these local checks.
 """
@@ -114,25 +120,45 @@ class WorkflowContractTests(unittest.TestCase):
     def test_security_scanner_fails_on_high_critical_findings_in_all_required_categories(self):
         scan = self.workflow["jobs"]["scan"]
         scanners = [step for step in scan["steps"] if step.get("uses", "").startswith("aquasecurity/trivy-action@")]
-        self.assertEqual(len(scanners), 1)
-        step = scanners[0]
-        self.assertEqual(step["uses"], "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25")
-        self.assertEqual(step["with"]["scan-type"], "fs")
-        self.assertEqual(step["with"]["scanners"], "vuln,misconfig,secret")
-        self.assertEqual(step["with"]["severity"], "HIGH,CRITICAL")
-        self.assertEqual(str(step["with"]["exit-code"]), "1")
-        self.assertNotIn("ignore-unfixed", step["with"])
+        self.assertEqual([step["with"]["scanners"] for step in scanners], ["vuln,secret", "misconfig"])
+        for step in scanners:
+            self.assertEqual(step["uses"], "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25")
+            self.assertEqual(step["with"]["scan-type"], "fs")
+            self.assertEqual(step["with"]["scan-ref"], ".")
+            self.assertEqual(step["with"]["severity"], "HIGH,CRITICAL")
+            self.assertEqual(str(step["with"]["exit-code"]), "1")
+            self.assertNotIn("ignore-unfixed", step["with"])
+            self.assertEqual(step["env"]["TRIVY_IGNORE_UNFIXED"], "false")
+
+    def test_dockerignore_parser_exclusion_never_skips_vulnerability_or_secret_scanning(self):
+        scanners = [step for step in self.workflow["jobs"]["scan"]["steps"] if step.get("uses", "").startswith("aquasecurity/trivy-action@")]
+        self.assertEqual(len(scanners), 2)
+        dependency_scan, configuration_scan = scanners
+        self.assertNotIn("skip-files", dependency_scan["with"])
+        self.assertNotIn("skip-dirs", dependency_scan["with"])
+        self.assertNotIn("TRIVY_SKIP_FILES", dependency_scan.get("env", {}))
+        self.assertNotIn("TRIVY_SKIP_DIRS", dependency_scan.get("env", {}))
+        self.assertEqual(configuration_scan["with"]["skip-files"], "**/*.dockerignore")
+        self.assertNotIn("skip-dirs", configuration_scan["with"])
+
+    def test_configuration_scan_still_runs_after_dependency_findings_without_waiving_failure(self):
+        scanners = [step for step in self.workflow["jobs"]["scan"]["steps"] if step.get("uses", "").startswith("aquasecurity/trivy-action@")]
+        self.assertEqual(len(scanners), 2)
+        self.assertEqual(scanners[1]["if"], "${{ !cancelled() }}")
+        self.assertNotIn("continue-on-error", self.rendered)
 
     def test_scan_uses_trusted_external_configuration_and_no_mutable_cache(self):
         scan = self.workflow["jobs"]["scan"]
-        step = next(step for step in scan["steps"] if step.get("uses", "").startswith("aquasecurity/trivy-action@"))
-        self.assertEqual(str(step["with"]["cache"]).lower(), "false")
-        self.assertEqual(step["with"]["cache-dir"], "${{ runner.temp }}/feature-quality-trivy/cache")
-        self.assertEqual(step["with"]["trivy-config"], "${{ runner.temp }}/feature-quality-trivy/trivy.yaml")
-        self.assertEqual(step["env"]["TRIVY_IGNOREFILE"], "${{ runner.temp }}/feature-quality-trivy/ignore")
-        self.assertEqual(step["env"]["TRIVY_SECRET_CONFIG"], "${{ runner.temp }}/feature-quality-trivy/secret.yaml")
-        self.assertEqual(step["with"]["version"], "v0.70.0")
-        self.assertNotIn("trivyignores", step["with"])
+        scanners = [step for step in scan["steps"] if step.get("uses", "").startswith("aquasecurity/trivy-action@")]
+        self.assertEqual(len(scanners), 2)
+        for step in scanners:
+            self.assertEqual(str(step["with"]["cache"]).lower(), "false")
+            self.assertEqual(step["with"]["cache-dir"], "${{ runner.temp }}/feature-quality-trivy/cache")
+            self.assertEqual(step["with"]["trivy-config"], "${{ runner.temp }}/feature-quality-trivy/trivy.yaml")
+            self.assertEqual(step["env"]["TRIVY_IGNOREFILE"], "${{ runner.temp }}/feature-quality-trivy/ignore")
+            self.assertEqual(step["env"]["TRIVY_SECRET_CONFIG"], "${{ runner.temp }}/feature-quality-trivy/secret.yaml")
+            self.assertEqual(step["with"]["version"], "v0.70.0")
+            self.assertNotIn("trivyignores", step["with"])
 
     def test_scanner_config_creation_ignores_candidate_suppressions(self):
         steps = self.workflow["jobs"]["scan"]["steps"]

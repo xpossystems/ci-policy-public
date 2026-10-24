@@ -1,0 +1,93 @@
+{
+  "repositories": {
+    "xpossystems/Dejavoo_restaurant-legacy": {
+      ".github/CODEOWNERS": {
+        "after": "5f187047b9b0b30952a3efa3e0af173703100a58",
+        "before": null
+      },
+      ".github/FEATURE_QUALITY_POLICY.md": {
+        "after": "b02fd8204007465dedcd49ed2607d827b372e3d2",
+        "before": null
+      },
+      ".github/workflows/feature-tests.yml": {
+        "after": "ec0f5032ad8faeebf6382600ae2d34c8c8b6999f",
+        "before": null
+      },
+      "AGENTS.md": {
+        "after": "c25560173d59fe886572e04021a8d910d5f5ff67",
+        "before": null
+      },
+      "CLAUDE.md": {
+        "after": "356d6eb24a964fb310137a96e40769788369e445",
+        "before": "ba819d63a9df582dfc547bd9e42536ccefeb086a"
+      }
+    },
+    "xpossystems/Kds-legacy": {
+      ".github/CODEOWNERS": {
+        "after": "5f187047b9b0b30952a3efa3e0af173703100a58",
+        "before": null
+      },
+      ".github/FEATURE_QUALITY_POLICY.md": {
+        "after": "b02fd8204007465dedcd49ed2607d827b372e3d2",
+        "before": null
+      },
+      ".github/workflows/feature-tests.yml": {
+        "after": "ec0f5032ad8faeebf6382600ae2d34c8c8b6999f",
+        "before": null
+      },
+      "AGENTS.md": {
+        "after": "c25560173d59fe886572e04021a8d910d5f5ff67",
+        "before": null
+      },
+      "CLAUDE.md": {
+        "after": "356d6eb24a964fb310137a96e40769788369e445",
+        "before": "ba819d63a9df582dfc547bd9e42536ccefeb086a"
+      }
+    },
+    "xpossystems/Pos_App-Android": {
+      ".github/CODEOWNERS": {
+        "after": "5f187047b9b0b30952a3efa3e0af173703100a58",
+        "before": null
+      },
+      ".github/FEATURE_QUALITY_POLICY.md": {
+        "after": "b02fd8204007465dedcd49ed2607d827b372e3d2",
+        "before": null
+      },
+      ".github/workflows/feature-tests.yml": {
+        "after": "ec0f5032ad8faeebf6382600ae2d34c8c8b6999f",
+        "before": null
+      },
+      "AGENTS.md": {
+        "after": "c25560173d59fe886572e04021a8d910d5f5ff67",
+        "before": null
+      },
+      "CLAUDE.md": {
+        "after": "c25560173d59fe886572e04021a8d910d5f5ff67",
+        "before": null
+      }
+    },
+    "xpossystems/paged-datatable": {
+      ".github/CODEOWNERS": {
+        "after": "5f187047b9b0b30952a3efa3e0af173703100a58",
+        "before": null
+      },
+      ".github/FEATURE_QUALITY_POLICY.md": {
+        "after": "b02fd8204007465dedcd49ed2607d827b372e3d2",
+        "before": null
+      },
+      ".github/workflows/feature-tests.yml": {
+        "after": "ec0f5032ad8faeebf6382600ae2d34c8c8b6999f",
+        "before": null
+      },
+      "AGENTS.md": {
+        "after": "c25560173d59fe886572e04021a8d910d5f5ff67",
+        "before": null
+      },
+      "CLAUDE.md": {
+        "after": "c25560173d59fe886572e04021a8d910d5f5ff67",
+        "before": null
+      }
+    }
+  },
+  "schema_version": 1
+}

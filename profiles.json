@@ -10,6 +10,7 @@
           "tests/test_changed_tests.py",
           "tests/test_run_suite.py",
           "tests/test_baseline_entry.py",
+          "tests/test_ci_configuration.py::ConfigurationGitIntegrationTests",
           "--junitxml=.ci-reports/integration.xml"
         ],
         "report": ".ci-reports/integration.xml",
@@ -47,6 +48,8 @@
           "tests/test_quality_gate.py",
           "tests/test_entry_review.py",
           "tests/test_entry_live.py",
+          "tests/test_ci_configuration.py::ConfigurationSecurityTests",
+          "tests/test_ci_configuration.py::ConfigurationEntrySecurityTests",
           "--junitxml=.ci-reports/security.xml"
         ],
         "report": ".ci-reports/security.xml",
@@ -60,18 +63,21 @@
         "integration": [
           "tests/test_changed_tests.py",
           "tests/test_run_suite.py",
-          "tests/test_baseline_entry.py"
+          "tests/test_baseline_entry.py",
+          "tests/test_ci_configuration.py"
         ],
         "security": [
           "tests/test_quality_gate.py",
           "tests/test_entry_review.py",
-          "tests/test_entry_live.py"
+          "tests/test_entry_live.py",
+          "tests/test_ci_configuration.py"
         ],
         "unit": [
           "tests/test_protection.py",
           "tests/test_protection_visibility.py",
           "tests/test_workflow.py",
-          "tests/test_entry.py"
+          "tests/test_entry.py",
+          "tests/test_ci_configuration.py"
         ]
       },
       "unit": {
@@ -84,6 +90,7 @@
           "tests/test_protection_visibility.py",
           "tests/test_workflow.py",
           "tests/test_entry.py",
+          "tests/test_ci_configuration.py::ConfigurationUnitTests",
           "--junitxml=.ci-reports/unit.xml"
         ],
         "report": ".ci-reports/unit.xml",

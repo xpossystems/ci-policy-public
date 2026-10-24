@@ -136,7 +136,7 @@ SCAN_VERIFY_JOBS = """  scan:
               path.write_text(content)
               path.chmod(0o444)
           PY
-      - name: Scan dependencies, configuration, and secrets
+      - name: Scan dependencies and secrets in every file
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         env:
           TRIVY_IGNOREFILE: ${{ runner.temp }}/feature-quality-trivy/ignore
@@ -145,7 +145,27 @@ SCAN_VERIFY_JOBS = """  scan:
         with:
           scan-type: fs
           scan-ref: .
-          scanners: vuln,misconfig,secret
+          scanners: vuln,secret
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+          version: v0.70.0
+          cache: 'false'
+          cache-dir: ${{ runner.temp }}/feature-quality-trivy/cache
+          trivy-config: ${{ runner.temp }}/feature-quality-trivy/trivy.yaml
+      # Trivy treats Dockerfile.dockerignore as Dockerfile source. Exclude only
+      # those parser inputs here; the separate secret/dependency pass skips none.
+      - name: Scan configuration with Docker ignore files excluded from parsing
+        if: ${{ !cancelled() }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        env:
+          TRIVY_IGNOREFILE: ${{ runner.temp }}/feature-quality-trivy/ignore
+          TRIVY_SECRET_CONFIG: ${{ runner.temp }}/feature-quality-trivy/secret.yaml
+          TRIVY_IGNORE_UNFIXED: 'false'
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: misconfig
+          skip-files: '**/*.dockerignore'
           exit-code: '1'
           severity: HIGH,CRITICAL
           version: v0.70.0

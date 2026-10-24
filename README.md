@@ -5,6 +5,14 @@ Every new feature or function requires TDD, unit and integration coverage,
 hands-on break and security testing, remediation, and successful retesting.
 Missing, failed, skipped, or unapproved evidence blocks the gate.
 
+`ci-configurations.json` records the exact reviewed CI setup file transitions
+for the public rollout. The clean verifier recomputes the entire Git diff and
+requires every before/after blob and regular-file mode to match. This only
+omits declarations for new application functionality when the change is exactly
+that approved setup. Approved real suites, security scanning, and independent
+review remain required. Added source files or even a one-byte workflow edit
+return to the normal feature gate; a manifest never grants an execution profile.
+
 `profiles.json` approves only this policy repository. The application repositories
 in `public-repositories.json` have no approved test execution profiles yet and
 must fail the planning gate. This is enforcement, not a claim that application
