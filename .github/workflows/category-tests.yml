@@ -1,0 +1,68 @@
+# Central baseline: .github/workflows/category-tests.yml
+# Public baseline workflow; only centrally approved profiles can pass.
+name: Feature category tests
+
+"on":
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  QUALITY_REPOSITORY: ${{ github.repository }}
+  QUALITY_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+  QUALITY_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
+  QUALITY_PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+  QUALITY_EVENT_NAME: ${{ github.event_name }}
+
+jobs:
+  plan:
+    name: Feature quality / plan
+    if: ${{ true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      runner: ${{ steps.plan.outputs.runner }}
+      python_version: ${{ steps.plan.outputs.python_version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Validate the feature quality contract
+        id: plan
+        uses: xpossystems/ci-policy-public@41de2f7837d8aa397b12ff09624c00ed8c25e0ed
+        with:
+          mode: plan
+          root: ${{ github.workspace }}
+          reports: ${{ runner.temp }}/quality-reports
+
+  run:
+    name: Feature quality / suites
+    needs: [plan]
+    runs-on: ${{ needs.plan.outputs.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ needs.plan.outputs.python_version }}
+      - name: Run unit, integration, and security suites
+        uses: xpossystems/ci-policy-public@41de2f7837d8aa397b12ff09624c00ed8c25e0ed
+        with:
+          mode: baseline
+          root: ${{ github.workspace }}
+          reports: ${{ runner.temp }}/quality-reports
+      - name: Preserve test and security evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: feature-quality-evidence
+          path: ${{ runner.temp }}/quality-reports
+          if-no-files-found: error
+          retention-days: 14
