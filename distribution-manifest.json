@@ -21,13 +21,16 @@
     "tests/test_changed_tests.py": "b1d7be4875aad3444edbc806f5f6fa57a1b09e2ec94a0f4dd9b6c2a12ab78ede",
     "tests/test_ci_configuration.py": "ac9390b9e04f34fa650986fbb021fc8e14d1655cb4caa14499d13b96810b638e",
     "tests/test_entry.py": "4ce959d3a4fdf4f2f6b5f0045df269a1bfed67067212b7db844c185a46e24a38",
+    "tests/test_entry_dependency_modes.py": "c2ec0c06fd43cef3cfbe602a2f0a62c9ee0a1fb6bb68d6b992a7d502255cd9dc",
     "tests/test_entry_live.py": "53a535bc9f844d10a9e0d7101afec7b64806e510640822b081a0346ab1efdaf0",
     "tests/test_entry_review.py": "9f201daf5b686e7d1a095ac0c68ce21c3a4ea883d0345ecb9d6044efdc61d5a6",
     "tests/test_protection.py": "bf7798dc49ae0f8bd2b3ff2f9a084e0389b863f423490c44fa3a7aadf71d6786",
     "tests/test_protection_visibility.py": "0529ffcd838c01c69b8a4b1e3b2cce50a5a031a35cef20d53a59bd537752d27d",
     "tests/test_quality_gate.py": "bcb02c01630d29c2c524379b794d92fa39b851687c9f89cf7fe3ff7899af0eeb",
+    "tests/test_regression_gate.py": "2d3e33815a398d7bb9fa1abe550897992c9eadbe4bb960030208b7d2f96ec9e7",
     "tests/test_run_suite.py": "eb5ef6dc018ebc2b26a5c6c0c2e05c556d5b8cb3c2a46f8c596b2be6f9790f93",
-    "tests/test_workflow.py": "c80b2e4e96363ea541a1f01e2a517c41137c133d630e87823e276524334a04c7",
+    "tests/test_trusted_dependencies.py": "e36f933d7dae05515ab3c061d1915a496f44775d568f8523e8926cc59bf1408c",
+    "tests/test_workflow.py": "7c97102ad2ea05e308e37eb96463f347c64387421d64f1d34be1661ea167b10c",
     "workflow.py": "2e9f0be6634bc33b763aeb449623f83795048d6371444fb776e88bf567d508a9"
   }
 }

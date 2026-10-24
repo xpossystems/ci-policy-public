@@ -86,7 +86,7 @@ class WorkflowContractTests(unittest.TestCase):
 
     def test_central_action_modes_and_runner_outputs_are_wired(self):
         jobs = self.workflow["jobs"]
-        self.assertEqual(set(jobs), {"plan", "run", "scan", "required"})
+        self.assertEqual(set(jobs), {"plan", "dependencies", "run", "scan", "required"})
         expected_outputs = {
             "runner": "${{ steps.plan.outputs.runner }}",
             "python_version": "${{ steps.plan.outputs.python_version }}",
@@ -94,17 +94,18 @@ class WorkflowContractTests(unittest.TestCase):
         expected_outputs.update({f'dependency_{slot}_{field}': '${{ steps.plan.outputs.dependency_'+str(slot)+'_'+field+' }}'
                                  for slot in (1, 2) for field in ('repository', 'sha', 'path', 'sparse_checkout')})
         self.assertEqual(jobs['plan']['outputs'], expected_outputs)
-        self.assertEqual(jobs["run"]["needs"], ["plan"])
+        self.assertEqual(jobs["run"]["needs"], ["plan", "dependencies"])
         self.assertEqual(jobs["run"]["runs-on"], "${{ needs.plan.outputs.runner }}")
         central_steps = []
         for job in jobs.values():
             central_steps.extend(step for step in job["steps"] if step.get("uses", "").startswith("xpossystems/ci-policy-public@"))
-        self.assertEqual({step["with"]["mode"] for step in central_steps}, {"plan", "run", "verify"})
+        self.assertEqual({step["with"]["mode"] for step in central_steps}, {"plan", "dependencies-export", "dependencies-restore", "run", "verify"})
         for step in central_steps:
             self.assertEqual(step["uses"], "xpossystems/ci-policy-public@" + ACTION_SHA)
             expected_root = '${{ github.workspace }}/candidate' if step['with']['mode'] == 'run' else '${{ github.workspace }}'
             self.assertEqual(step["with"]["root"], expected_root)
-            self.assertEqual(step["with"]["reports"], "${{ runner.temp }}/quality-reports")
+            expected_reports = "${{ runner.temp }}/quality-dependencies" if step["with"]["mode"].startswith("dependencies-") else "${{ runner.temp }}/quality-reports"
+            self.assertEqual(step["with"]["reports"], expected_reports)
         setup = [step for step in jobs["run"]["steps"] if step.get("uses", "").startswith("actions/setup-python@")]
         self.assertEqual(len(setup), 1)
         self.assertEqual(setup[0]["uses"], "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065")
@@ -217,7 +218,7 @@ class WorkflowContractTests(unittest.TestCase):
         required = self.workflow["jobs"]["required"]
         self.assertEqual(required["name"], "Feature quality / required")
         self.assertEqual(required["if"], "${{ always() }}")
-        self.assertEqual(set(required["needs"]), {"plan", "run", "scan"})
+        self.assertEqual(set(required["needs"]), {"plan", "dependencies", "run", "scan"})
         self.assertIn("run", required["steps"][0])
         self.assertEqual(required["steps"][0]["env"]["NEEDS_JSON"], "${{ toJSON(needs) }}")
 
@@ -243,7 +244,7 @@ class WorkflowContractTests(unittest.TestCase):
 
     def test_dependency_barrier_executes_and_only_accepts_all_success(self):
         script = self.workflow["jobs"]["required"]["steps"][0]["run"]
-        passing = {name: {"result": "success"} for name in ("plan", "run", "scan")}
+        passing = {name: {"result": "success"} for name in ("plan", "dependencies", "run", "scan")}
         result = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", script], env=dict(os.environ, NEEDS_JSON=json.dumps(passing)), text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         for name in passing:
@@ -315,7 +316,7 @@ class BaselineWorkflowTests(unittest.TestCase):
         self.assertEqual(set(baseline["on"]), {"workflow_call"})
         self.assertEqual(baseline["permissions"], {"contents": "read"})
         self.assertEqual(baseline["env"], required["env"])
-        expected = copy.deepcopy({name: required["jobs"][name] for name in ("plan", "run")})
+        expected = copy.deepcopy({name: required["jobs"][name] for name in ("plan", "dependencies", "run")})
         step = next(step for step in expected['run']['steps'] if step.get('with', {}).get('mode') == 'run')
         step['with']['mode'] = 'baseline'
         self.assertEqual(baseline["jobs"], expected)
@@ -350,10 +351,22 @@ class BaselineWorkflowTests(unittest.TestCase):
         steps = required['jobs']['run']['steps']
         self.assertEqual(steps[0]['with']['path'], 'candidate')
         candidate_execution = next(i for i, step in enumerate(steps) if step.get('with', {}).get('mode') == 'run')
-        checkouts = [(i, step) for i, step in enumerate(steps) if 'repository' in step.get('with', {})]
+        self.assertNotIn('secrets.', json.dumps(required['jobs']['run']))
+        trusted_steps = required['jobs']['dependencies']['steps']
+        checkouts = [(i, step) for i, step in enumerate(trusted_steps) if 'repository' in step.get('with', {})]
+        self.assertFalse(any('run' in step for step in trusted_steps))
+        self.assertEqual(required['jobs']['dependencies']['needs'], ['plan'])
+        restore_index = next(i for i, step in enumerate(steps) if step.get('with', {}).get('mode') == 'dependencies-restore')
+        self.assertLess(restore_index, candidate_execution)
+        upload = next(step for step in trusted_steps if step.get('uses', '').startswith('actions/upload-artifact@'))
+        download = next(step for step in steps if step.get('uses', '').startswith('actions/download-artifact@'))
+        self.assertEqual(upload['with']['name'], 'feature-quality-dependencies')
+        self.assertEqual(download['with']['artifact-ids'], '${{ needs.dependencies.outputs.artifact_id }}')
+        self.assertEqual(required['jobs']['dependencies']['outputs']['artifact_id'], '${{ steps.sources.outputs.artifact-id }}')
+        self.assertEqual(upload['id'], 'sources')
+        self.assertNotIn('overwrite', upload['with'])
         self.assertEqual(len(checkouts), 2)
         for slot, (index, step) in enumerate(checkouts, 1):
-            self.assertLess(index, candidate_execution)
             prefix = 'needs.plan.outputs.dependency_'+str(slot)+'_'
             self.assertEqual(step['if'], '${{ '+prefix+"repository != '' }}")
             for field in ('repository', 'path'):
@@ -367,6 +380,20 @@ class BaselineWorkflowTests(unittest.TestCase):
                 if 'repository' not in step.get('with', {}):
                     self.assertNotIn('XPOS_CI_READ_TOKEN', json.dumps(step))
         self.assertNotIn('XPOS_CI_READ_TOKEN', json.dumps(required.get('env', {})))
+
+    def test_native_dependency_broker_exports_artifact_id_without_candidate_execution(self):
+        broker = yaml.safe_load(self.module.generate_dependency_workflow(ACTION_SHA))
+        self.assertEqual(set(broker['jobs']), {'plan', 'dependencies'})
+        self.assertEqual(broker['on']['workflow_call']['outputs']['artifact_id']['value'],
+                         '${{ jobs.dependencies.outputs.artifact_id }}')
+        self.assertEqual(broker['permissions'], {'contents': 'read'})
+        for job in broker['jobs'].values():
+            for step in job['steps']:
+                self.assertNotIn('run', step)
+                if 'uses' in step:
+                    self.assertRegex(step['uses'], r'@[0-9a-f]{40}$')
+                self.assertNotIn(step.get('with', {}).get('mode'), ('run', 'baseline'))
+        self.assertNotIn('secrets: inherit', self.module.generate_dependency_workflow(ACTION_SHA))
 
     def test_both_generators_refuse_mutable_placeholder_or_injected_refs(self):
         invalid_refs = ["main", "refs/heads/main", "0" * 40, "f" * 40, "deadbeef" * 5, "<POLICY_SHA>", ACTION_SHA + "\n", ACTION_SHA + ";echo hacked", None]
