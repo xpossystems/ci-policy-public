@@ -1,0 +1,29 @@
+name: Trusted feature quality gate
+description: Executes only centrally approved suites; missing coverage blocks completion.
+inputs:
+  mode:
+    description: plan, baseline test execution, required run, or verify
+    required: true
+  root:
+    description: Candidate checkout directory
+    required: true
+  reports:
+    description: Absolute report directory outside the candidate checkout
+    required: true
+outputs:
+  runner:
+    description: Approved runner
+    value: ${{ steps.gate.outputs.runner }}
+  python_version:
+    description: Approved Python version
+    value: ${{ steps.gate.outputs.python_version }}
+runs:
+  using: composite
+  steps:
+    - id: gate
+      shell: bash
+      env:
+        GATE_MODE: ${{ inputs.mode }}
+        GATE_ROOT: ${{ inputs.root }}
+        GATE_REPORTS: ${{ inputs.reports }}
+      run: python3 "$GITHUB_ACTION_PATH/entry.py" --mode "$GATE_MODE" --root "$GATE_ROOT" --reports "$GATE_REPORTS"

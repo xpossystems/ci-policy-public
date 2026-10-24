@@ -1,0 +1,21 @@
+{
+  "repositories": [
+    {
+      "repository": "xpossystems/paged-datatable",
+      "status": "blocked_missing_approved_test_suites"
+    },
+    {
+      "repository": "xpossystems/Kds-legacy",
+      "status": "blocked_missing_approved_test_suites"
+    },
+    {
+      "repository": "xpossystems/Dejavoo_restaurant-legacy",
+      "status": "blocked_missing_approved_test_suites"
+    },
+    {
+      "repository": "xpossystems/Pos_App-Android",
+      "status": "blocked_missing_approved_test_suites"
+    }
+  ],
+  "schema_version": 1
+}

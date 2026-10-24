@@ -1,0 +1,95 @@
+{
+  "repositories": {
+    "xpossystems/ci-policy-public": {
+      "integration": {
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/test_changed_tests.py",
+          "tests/test_run_suite.py",
+          "tests/test_baseline_entry.py",
+          "--junitxml=.ci-reports/integration.xml"
+        ],
+        "report": ".ci-reports/integration.xml",
+        "timeout_seconds": 300
+      },
+      "prepare": [
+        [
+          "python",
+          "-m",
+          "pip",
+          "install",
+          "-r",
+          "requirements-dev.txt"
+        ]
+      ],
+      "python_version": "3.12",
+      "regression_commands": [
+        [
+          "python",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests",
+          "-q"
+        ]
+      ],
+      "runner": "ubuntu-24.04",
+      "security": {
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/test_quality_gate.py",
+          "tests/test_entry_review.py",
+          "tests/test_entry_live.py",
+          "--junitxml=.ci-reports/security.xml"
+        ],
+        "report": ".ci-reports/security.xml",
+        "timeout_seconds": 300
+      },
+      "tdd_workflows": {
+        "green": ".github/workflows/feature-tests.yml",
+        "red": ".github/workflows/feature-tests.yml"
+      },
+      "test_paths": {
+        "integration": [
+          "tests/test_changed_tests.py",
+          "tests/test_run_suite.py",
+          "tests/test_baseline_entry.py"
+        ],
+        "security": [
+          "tests/test_quality_gate.py",
+          "tests/test_entry_review.py",
+          "tests/test_entry_live.py"
+        ],
+        "unit": [
+          "tests/test_protection.py",
+          "tests/test_protection_visibility.py",
+          "tests/test_workflow.py",
+          "tests/test_entry.py"
+        ]
+      },
+      "unit": {
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/test_protection.py",
+          "tests/test_protection_visibility.py",
+          "tests/test_workflow.py",
+          "tests/test_entry.py",
+          "--junitxml=.ci-reports/unit.xml"
+        ],
+        "report": ".ci-reports/unit.xml",
+        "timeout_seconds": 300
+      }
+    }
+  },
+  "schema_version": 1
+}
