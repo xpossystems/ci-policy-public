@@ -180,7 +180,7 @@ def classify_change(root, base_sha, head_sha, repository, profile):
     if manifest_path.exists():
         manifest = json.loads(manifest_path.read_text(), object_pairs_hook=_object)
         result = ci_configuration.classify_configuration(root=root, base_sha=base_sha,
-            head_sha=head_sha, repository=repository, manifest=manifest)
+            head_sha=head_sha, repository=repository, manifest=manifest, test_paths=profile.get('test_paths'))
         if result is not None:
             return result
     return changed_tests.check_changed_tests(root, base_sha, head_sha, profile.get('test_paths'))
@@ -258,7 +258,7 @@ def main(argv=None):
         # Recompute from the clean verifier checkout. Never trust a classification
         # artifact produced in the job that executed candidate test code.
         change = classify_change(args.root, base_sha, head_sha, repository, profile)
-        if change['classification'] in ('documentation', 'ci_configuration'):
+        if change['classification'] in ('documentation', 'ci_configuration', 'test_maintenance'):
             counts = quality_gate.validate_reports(unit_report=reports/'unit.xml',
                 integration_report=reports/'integration.xml', security_report=reports/'security.xml')
             print(json.dumps({'status': 'validated', 'classification': change['classification'],

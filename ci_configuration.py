@@ -16,7 +16,7 @@ SHA = re.compile(r'[0-9a-f]{40}')
 REPOSITORY = re.compile(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+')
 
 
-def approved_files(manifest, repository):
+def approved_files(manifest, repository, test_paths=None):
     if (not isinstance(repository, str) or REPOSITORY.fullmatch(repository) is None
             or any(part in ('.', '..') for part in repository.split('/'))):
         raise ValueError('Invalid configuration repository identity')
@@ -27,25 +27,36 @@ def approved_files(manifest, repository):
     if repository not in manifest['repositories']:
         return None
     files = manifest['repositories'][repository]
-    if not isinstance(files, dict) or not files or not set(files).issubset(CONTROL_PATHS):
+    if not isinstance(files, dict) or not files:
         raise ValueError('Only exact reviewed CI control paths can be approved')
-    for change in files.values():
+    repairs = set(files) - CONTROL_PATHS
+    if repairs:
+        patterns = changed_tests._patterns(test_paths)
+        for path in repairs:
+            if (not isinstance(path, str) or path.startswith('/') or '\\' in path
+                    or any(part in ('', '.', '..') for part in path.split('/'))
+                    or not any(changed_tests.matches_path(path, pattern)
+                               for values in patterns.values() for pattern in values)):
+                raise ValueError('Reviewed maintenance must match a trusted test path')
+    for path, change in files.items():
         if (not isinstance(change, dict) or set(change) != {'before', 'after'}
                 or not isinstance(change['after'], str) or SHA.fullmatch(change['after']) is None
                 or (change['before'] is not None and (
                     not isinstance(change['before'], str) or SHA.fullmatch(change['before']) is None))
                 or change['before'] == change['after']):
             raise ValueError('Invalid reviewed configuration blob transition')
+        if path in repairs and (change['before'] is None or change['after'] == changed_tests.EMPTY_BLOB_SHA):
+            raise ValueError('Maintenance must preserve an existing nonempty test file')
     return files
 
 
-def classify_configuration(*, root, base_sha, head_sha, repository, manifest):
+def classify_configuration(*, root, base_sha, head_sha, repository, manifest, test_paths=None):
     """Return a classification only for the entire exact reviewed Git diff.
 
 An ordinary mismatch returns None, so the full feature requirements still
 apply. Malformed identities, manifests, roots or Git objects fail closed.
 """
-    files = approved_files(manifest, repository)
+    files = approved_files(manifest, repository, test_paths)
     if files is None:
         return None
     base, head = changed_tests._sha(base_sha), changed_tests._sha(head_sha)
@@ -77,5 +88,8 @@ apply. Malformed identities, manifests, roots or Git objects fail closed.
                 return None
         elif before.get(path) != ('100644', expected['before']):
             return None
-    return {'classification': 'ci_configuration', 'repository': repository,
+        if path not in CONTROL_PATHS and expected['after'] in old_blobs:
+            return None
+    classification = 'test_maintenance' if set(files) - CONTROL_PATHS else 'ci_configuration'
+    return {'classification': classification, 'repository': repository,
             'base_sha': base, 'head_sha': head, 'changed_paths': sorted(files)}
