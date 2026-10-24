@@ -142,6 +142,7 @@ SCAN_VERIFY_JOBS = """  scan:
           TRIVY_IGNOREFILE: ${{ runner.temp }}/feature-quality-trivy/ignore
           TRIVY_SECRET_CONFIG: ${{ runner.temp }}/feature-quality-trivy/secret.yaml
           TRIVY_IGNORE_UNFIXED: 'false'
+          TRIVY_FILE_PATTERNS: 'pip:(^|/)(requirements/[^/]+\\.(txt|lock)|requirements[^/]*\\.txt)$'
         with:
           scan-type: fs
           scan-ref: .

@@ -17,6 +17,11 @@ generated scanner options against a local Dockerfile.dockerignore containing a
 synthetic credential and a Dockerfile with a root user. Both passes returned
 exit 1 despite candidate-controlled suppression files; the parser error was
 gone and the API's 14 existing high/critical findings remained visible.
+Pip discovery follow-up: one new assertion failed before the environment flag
+was added; all 25 tests passed afterward. The actual generated environment was
+run through Trivy: vulnerable default, suffixed and split requirements files
+were found, along with the synthetic ignore-file secret, despite candidate
+suppression files. The scan returned exit 1.
 Run: python3 -m unittest discover -s tests -p test_workflow.py -v
 No live Actions run or external pentest is claimed by these local checks.
 """
@@ -146,6 +151,16 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(len(scanners), 2)
         self.assertEqual(scanners[1]["if"], "${{ !cancelled() }}")
         self.assertNotIn("continue-on-error", self.rendered)
+
+    def test_dependency_scan_discovers_split_and_suffixed_pip_requirements(self):
+        scanners = [step for step in self.workflow["jobs"]["scan"]["steps"] if step.get("uses", "").startswith("aquasecurity/trivy-action@")]
+        self.assertEqual(scanners[0]["with"]["scanners"], "vuln,secret")
+        self.assertEqual(scanners[0]["env"].get("TRIVY_FILE_PATTERNS"),
+                         r"pip:(^|/)(requirements/[^/]+\.(txt|lock)|requirements[^/]*\.txt)$")
+        # The pinned action has no file-patterns input; Trivy's supported env
+        # flag is additive and must not alter the separate configuration pass.
+        self.assertNotIn("file-patterns", scanners[0]["with"])
+        self.assertNotIn("TRIVY_FILE_PATTERNS", scanners[1]["env"])
 
     def test_scan_uses_trusted_external_configuration_and_no_mutable_cache(self):
         scan = self.workflow["jobs"]["scan"]

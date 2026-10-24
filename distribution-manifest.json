@@ -27,7 +27,7 @@
     "tests/test_protection_visibility.py": "0529ffcd838c01c69b8a4b1e3b2cce50a5a031a35cef20d53a59bd537752d27d",
     "tests/test_quality_gate.py": "bcb02c01630d29c2c524379b794d92fa39b851687c9f89cf7fe3ff7899af0eeb",
     "tests/test_run_suite.py": "eb5ef6dc018ebc2b26a5c6c0c2e05c556d5b8cb3c2a46f8c596b2be6f9790f93",
-    "tests/test_workflow.py": "1d7e2d47506672213d00dc6284e623f0819701c0848a94d2e64cb955df3401ea",
-    "workflow.py": "8a57d64c78b2235e1dd88827d2d81cea74b5a1268ddf4485b67cf556f689f52b"
+    "tests/test_workflow.py": "c80b2e4e96363ea541a1f01e2a517c41137c133d630e87823e276524334a04c7",
+    "workflow.py": "2e9f0be6634bc33b763aeb449623f83795048d6371444fb776e88bf567d508a9"
   }
 }
