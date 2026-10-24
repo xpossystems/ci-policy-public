@@ -77,18 +77,23 @@ class WorkflowContractTests(unittest.TestCase):
                 if step.get("uses", "").startswith("actions/checkout@"):
                     self.assertEqual(step["uses"], "actions/checkout@11d5960a326750d5838078e36cf38b85af677262")
                     self.assertIs(step["with"]["persist-credentials"], False)
-                    self.assertEqual(step["with"]["ref"], "${{ github.sha }}")
-                    self.assertEqual(step["with"]["fetch-depth"], 0)
-        self.assertNotIn("secrets.", self.rendered)
+                    if 'repository' not in step['with']:
+                        self.assertEqual(step["with"]["ref"], "${{ github.sha }}")
+                        self.assertEqual(step["with"]["fetch-depth"], 0)
+                    else:
+                        self.assertEqual(step['with']['token'], '${{ secrets.XPOS_CI_READ_TOKEN || secrets.XPOS_REPOS_TOKEN }}')
         self.assertNotIn("continue-on-error", self.rendered)
 
     def test_central_action_modes_and_runner_outputs_are_wired(self):
         jobs = self.workflow["jobs"]
         self.assertEqual(set(jobs), {"plan", "run", "scan", "required"})
-        self.assertEqual(jobs["plan"]["outputs"], {
+        expected_outputs = {
             "runner": "${{ steps.plan.outputs.runner }}",
             "python_version": "${{ steps.plan.outputs.python_version }}",
-        })
+        }
+        expected_outputs.update({f'dependency_{slot}_{field}': '${{ steps.plan.outputs.dependency_'+str(slot)+'_'+field+' }}'
+                                 for slot in (1, 2) for field in ('repository', 'sha', 'path', 'sparse_checkout')})
+        self.assertEqual(jobs['plan']['outputs'], expected_outputs)
         self.assertEqual(jobs["run"]["needs"], ["plan"])
         self.assertEqual(jobs["run"]["runs-on"], "${{ needs.plan.outputs.runner }}")
         central_steps = []
@@ -97,7 +102,8 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual({step["with"]["mode"] for step in central_steps}, {"plan", "run", "verify"})
         for step in central_steps:
             self.assertEqual(step["uses"], "xpossystems/ci-policy-public@" + ACTION_SHA)
-            self.assertEqual(step["with"]["root"], "${{ github.workspace }}")
+            expected_root = '${{ github.workspace }}/candidate' if step['with']['mode'] == 'run' else '${{ github.workspace }}'
+            self.assertEqual(step["with"]["root"], expected_root)
             self.assertEqual(step["with"]["reports"], "${{ runner.temp }}/quality-reports")
         setup = [step for step in jobs["run"]["steps"] if step.get("uses", "").startswith("actions/setup-python@")]
         self.assertEqual(len(setup), 1)
@@ -329,6 +335,38 @@ class BaselineWorkflowTests(unittest.TestCase):
         self.assertNotIn("secrets", repository["jobs"]["tests"])
         self.assertNotIn("secrets: inherit", text)
         self.assertNotIn("pull_request_target", text)
+
+    def test_dependency_caller_forwards_only_named_read_secret_when_requested(self):
+        text = self.module.generate_repository_workflow(ACTION_SHA, dependencies=True)
+        caller = yaml.safe_load(text)
+        self.assertEqual(caller['jobs']['tests']['secrets'],
+                         {'XPOS_CI_READ_TOKEN': '${{ secrets.XPOS_CI_READ_TOKEN }}'})
+        baseline = yaml.safe_load(self.module.generate_baseline_workflow(ACTION_SHA))
+        self.assertEqual(baseline['on']['workflow_call']['secrets']['XPOS_CI_READ_TOKEN']['required'], False)
+        self.assertNotIn('secrets: inherit', text)
+
+    def test_dependency_checkouts_are_siblings_before_untrusted_execution(self):
+        required = yaml.safe_load(self.module.generate_workflow(action_sha=ACTION_SHA))
+        steps = required['jobs']['run']['steps']
+        self.assertEqual(steps[0]['with']['path'], 'candidate')
+        candidate_execution = next(i for i, step in enumerate(steps) if step.get('with', {}).get('mode') == 'run')
+        checkouts = [(i, step) for i, step in enumerate(steps) if 'repository' in step.get('with', {})]
+        self.assertEqual(len(checkouts), 2)
+        for slot, (index, step) in enumerate(checkouts, 1):
+            self.assertLess(index, candidate_execution)
+            prefix = 'needs.plan.outputs.dependency_'+str(slot)+'_'
+            self.assertEqual(step['if'], '${{ '+prefix+"repository != '' }}")
+            for field in ('repository', 'path'):
+                self.assertEqual(step['with'][field], '${{ '+prefix+field+' }}')
+            self.assertEqual(step['with']['ref'], '${{ '+prefix+'sha }}')
+            self.assertEqual(step['with']['sparse-checkout'], '${{ '+prefix+'sparse_checkout }}')
+            self.assertIs(step['with']['sparse-checkout-cone-mode'], False)
+            self.assertIs(step['with']['persist-credentials'], False)
+        for job in required['jobs'].values():
+            for step in job['steps']:
+                if 'repository' not in step.get('with', {}):
+                    self.assertNotIn('XPOS_CI_READ_TOKEN', json.dumps(step))
+        self.assertNotIn('XPOS_CI_READ_TOKEN', json.dumps(required.get('env', {})))
 
     def test_both_generators_refuse_mutable_placeholder_or_injected_refs(self):
         invalid_refs = ["main", "refs/heads/main", "0" * 40, "f" * 40, "deadbeef" * 5, "<POLICY_SHA>", ACTION_SHA + "\n", ACTION_SHA + ";echo hacked", None]
