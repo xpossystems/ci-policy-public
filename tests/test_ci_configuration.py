@@ -42,6 +42,7 @@ class GitFixture:
         self.git('config', 'user.email', 'ci@example.invalid')
         self.git('config', 'core.hooksPath', str(self.directory/'no-hooks'))
         self.write('source.py', 'value = 1\n')
+        self.write('tests/integration/test_existing.py', 'def test_existing(): assert 1 == 1\n')
         self.write('AGENTS.md', 'Existing instructions\n')
         self.base = self.commit('base')
         self.before = self.git('rev-parse', self.base+':AGENTS.md')
@@ -246,6 +247,19 @@ class ConfigurationEntrySecurityTests(GitFixture, unittest.TestCase):
         self.assertEqual(json.loads(out)['classification'], 'ci_configuration')
         self.assertEqual(json.loads(out)['executed'], {kind: 1 for kind in entry.CATEGORIES})
 
+    def test_exact_reviewed_test_repair_uses_clean_tree_and_still_requires_reports(self):
+        path = 'tests/integration/test_existing.py'
+        self.write(path, 'def test_existing(): assert 2 == 2\n')
+        head = self.commit('reviewed existing-test repair')
+        self.manifest['repositories'][REPOSITORY][path] = {
+            'before': self.git('rev-parse', self.base+':'+path), 'after': self.git('rev-parse', head+':'+path)}
+        (self.directory/'ci-configurations.json').write_text(json.dumps(self.manifest))
+        result, out, err = self.verify(head)
+        self.assertEqual(result, 0, err)
+        self.assertEqual(json.loads(out)['classification'], 'test_maintenance')
+        (self.reports/'unit.xml').unlink()
+        self.assertNotEqual(self.verify(head)[0], 0)
+
     def test_missing_or_failed_security_report_still_blocks(self):
         path = self.reports/'security.xml'
         path.unlink()
@@ -279,6 +293,54 @@ class ConfigurationEntrySecurityTests(GitFixture, unittest.TestCase):
             result = entry.main(['--mode', 'run', '--root', str(self.root), '--reports', str(output)])
         self.assertEqual(result, 0)
         self.assertEqual(sorted(p.name for p in output.glob('*.xml')), ['integration.xml', 'security.xml', 'unit.xml'])
+
+
+class ConfigurationMaintenanceSecurityTests(GitFixture, unittest.TestCase):
+    def repair(self):
+        self.path = 'tests/integration/test_existing.py'
+        self.write(self.path, 'def test_existing(): assert 2 == 2\n')
+        self.head = self.commit('reviewed existing-test repair')
+        self.manifest['repositories'][REPOSITORY][self.path] = {
+            'before': self.git('rev-parse', self.base+':'+self.path),
+            'after': self.git('rev-parse', self.head+':'+self.path)}
+
+    def test_exact_existing_test_repair_can_be_reviewed_with_ci_controls(self):
+        self.repair()
+        self.assertEqual(self.check(test_paths=PATTERNS)['classification'], 'test_maintenance')
+
+    def test_unapproved_test_path_or_missing_trusted_patterns_cannot_be_registered(self):
+        self.repair()
+        for paths in [None, {kind: [f'other/{kind}/*.py'] for kind in entry.CATEGORIES}]:
+            with self.subTest(paths=paths), self.assertRaises(ValueError):
+                self.check(test_paths=paths)
+
+    def test_adding_new_test_or_removing_all_existing_content_cannot_be_registered(self):
+        self.repair()
+        for transition in [{'before': None, 'after': 'a'*40},
+                           {'before': self.manifest['repositories'][REPOSITORY][self.path]['before'],
+                            'after': 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'}]:
+            manifest = copy.deepcopy(self.manifest)
+            manifest['repositories'][REPOSITORY][self.path] = transition
+            with self.subTest(transition=transition), self.assertRaises(ValueError):
+                self.check(test_paths=PATTERNS, manifest=manifest)
+
+    def test_one_byte_unreviewed_test_change_cannot_reuse_maintenance_approval(self):
+        self.repair()
+        self.write(self.path, 'def test_existing(): assert 2 == 3\n')
+        self.assertIsNone(self.check(test_paths=PATTERNS, head_sha=self.commit('unreviewed assertion')))
+
+    def test_extra_application_source_or_candidate_profile_cannot_expand_approval(self):
+        self.repair()
+        self.write('source.py', 'value = 2\n')
+        self.write('profiles.json', json.dumps({'test_paths': {kind: ['**'] for kind in entry.CATEGORIES}}))
+        self.assertIsNone(self.check(test_paths=PATTERNS, head_sha=self.commit('forged source approval')))
+
+    def test_existing_test_cannot_become_executable_or_deleted(self):
+        self.repair()
+        (self.root/self.path).chmod(0o755)
+        self.assertIsNone(self.check(test_paths=PATTERNS, head_sha=self.commit('executable test')))
+        (self.root/self.path).unlink()
+        self.assertIsNone(self.check(test_paths=PATTERNS, head_sha=self.commit('deleted test')))
 
 
 if __name__ == '__main__':
