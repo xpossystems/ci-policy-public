@@ -17,6 +17,7 @@
     "run_suite.py": "9de7c5e8ad2d93745120cd2cff4b1568dfbd57558ba66003105556a14fc53533",
     "tests/test_baseline_entry.py": "b9cf8090cede0d2af8bc00c9fb2619d162db85a711cf51741240ca83f723e4f7",
     "tests/test_changed_tests.py": "a23aeba4bb6a74498d2e0abf299b0980cf78da6b0b79a503385cfb870f631246",
+    "tests/test_ci_configuration.py": "9159f48c2db6affd01a1cddd0422bf165f0dd43082f4d36a49162acf6e098b38",
     "tests/test_entry.py": "4ce959d3a4fdf4f2f6b5f0045df269a1bfed67067212b7db844c185a46e24a38",
     "tests/test_entry_live.py": "53a535bc9f844d10a9e0d7101afec7b64806e510640822b081a0346ab1efdaf0",
     "tests/test_entry_review.py": "9f201daf5b686e7d1a095ac0c68ce21c3a4ea883d0345ecb9d6044efdc61d5a6",
