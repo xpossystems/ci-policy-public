@@ -11,6 +11,17 @@ adding full checkout history and the trusted base SHA made all 16 tests pass.
 Baseline follow-up: new generator/CLI tests failed before implementation
 (3 failures and 3 missing-method errors). Shared plan/run fragments and the
 pinned repository caller made the expanded 21-test suite pass.
+Docker ignore parser follow-up: four contract assertions failed before splitting
+the scans; all 24 workflow tests then passed. Trivy 0.70.0 also executed the
+generated scanner options against a local Dockerfile.dockerignore containing a
+synthetic credential and a Dockerfile with a root user. Both passes returned
+exit 1 despite candidate-controlled suppression files; the parser error was
+gone and the API's 14 existing high/critical findings remained visible.
+Pip discovery follow-up: one new assertion failed before the environment flag
+was added; all 25 tests passed afterward. The actual generated environment was
+run through Trivy: vulnerable default, suffixed and split requirements files
+were found, along with the synthetic ignore-file secret, despite candidate
+suppression files. The scan returned exit 1.
 Run: python3 -m unittest discover -s tests -p test_workflow.py -v
 No live Actions run or external pentest is claimed by these local checks.
 """
@@ -66,28 +77,35 @@ class WorkflowContractTests(unittest.TestCase):
                 if step.get("uses", "").startswith("actions/checkout@"):
                     self.assertEqual(step["uses"], "actions/checkout@11d5960a326750d5838078e36cf38b85af677262")
                     self.assertIs(step["with"]["persist-credentials"], False)
-                    self.assertEqual(step["with"]["ref"], "${{ github.sha }}")
-                    self.assertEqual(step["with"]["fetch-depth"], 0)
-        self.assertNotIn("secrets.", self.rendered)
+                    if 'repository' not in step['with']:
+                        self.assertEqual(step["with"]["ref"], "${{ github.sha }}")
+                        self.assertEqual(step["with"]["fetch-depth"], 0)
+                    else:
+                        self.assertEqual(step['with']['token'], '${{ secrets.XPOS_CI_READ_TOKEN || secrets.XPOS_REPOS_TOKEN }}')
         self.assertNotIn("continue-on-error", self.rendered)
 
     def test_central_action_modes_and_runner_outputs_are_wired(self):
         jobs = self.workflow["jobs"]
-        self.assertEqual(set(jobs), {"plan", "run", "scan", "required"})
-        self.assertEqual(jobs["plan"]["outputs"], {
+        self.assertEqual(set(jobs), {"plan", "dependencies", "run", "scan", "required"})
+        expected_outputs = {
             "runner": "${{ steps.plan.outputs.runner }}",
             "python_version": "${{ steps.plan.outputs.python_version }}",
-        })
-        self.assertEqual(jobs["run"]["needs"], ["plan"])
+        }
+        expected_outputs.update({f'dependency_{slot}_{field}': '${{ steps.plan.outputs.dependency_'+str(slot)+'_'+field+' }}'
+                                 for slot in (1, 2) for field in ('repository', 'sha', 'path', 'sparse_checkout')})
+        self.assertEqual(jobs['plan']['outputs'], expected_outputs)
+        self.assertEqual(jobs["run"]["needs"], ["plan", "dependencies"])
         self.assertEqual(jobs["run"]["runs-on"], "${{ needs.plan.outputs.runner }}")
         central_steps = []
         for job in jobs.values():
             central_steps.extend(step for step in job["steps"] if step.get("uses", "").startswith("xpossystems/ci-policy-public@"))
-        self.assertEqual({step["with"]["mode"] for step in central_steps}, {"plan", "run", "verify"})
+        self.assertEqual({step["with"]["mode"] for step in central_steps}, {"plan", "dependencies-export", "dependencies-restore", "run", "verify"})
         for step in central_steps:
             self.assertEqual(step["uses"], "xpossystems/ci-policy-public@" + ACTION_SHA)
-            self.assertEqual(step["with"]["root"], "${{ github.workspace }}")
-            self.assertEqual(step["with"]["reports"], "${{ runner.temp }}/quality-reports")
+            expected_root = '${{ github.workspace }}/candidate' if step['with']['mode'] == 'run' else '${{ github.workspace }}'
+            self.assertEqual(step["with"]["root"], expected_root)
+            expected_reports = "${{ runner.temp }}/quality-dependencies" if step["with"]["mode"].startswith("dependencies-") else "${{ runner.temp }}/quality-reports"
+            self.assertEqual(step["with"]["reports"], expected_reports)
         setup = [step for step in jobs["run"]["steps"] if step.get("uses", "").startswith("actions/setup-python@")]
         self.assertEqual(len(setup), 1)
         self.assertEqual(setup[0]["uses"], "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065")
@@ -114,25 +132,55 @@ class WorkflowContractTests(unittest.TestCase):
     def test_security_scanner_fails_on_high_critical_findings_in_all_required_categories(self):
         scan = self.workflow["jobs"]["scan"]
         scanners = [step for step in scan["steps"] if step.get("uses", "").startswith("aquasecurity/trivy-action@")]
-        self.assertEqual(len(scanners), 1)
-        step = scanners[0]
-        self.assertEqual(step["uses"], "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25")
-        self.assertEqual(step["with"]["scan-type"], "fs")
-        self.assertEqual(step["with"]["scanners"], "vuln,misconfig,secret")
-        self.assertEqual(step["with"]["severity"], "HIGH,CRITICAL")
-        self.assertEqual(str(step["with"]["exit-code"]), "1")
-        self.assertNotIn("ignore-unfixed", step["with"])
+        self.assertEqual([step["with"]["scanners"] for step in scanners], ["vuln,secret", "misconfig"])
+        for step in scanners:
+            self.assertEqual(step["uses"], "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25")
+            self.assertEqual(step["with"]["scan-type"], "fs")
+            self.assertEqual(step["with"]["scan-ref"], ".")
+            self.assertEqual(step["with"]["severity"], "HIGH,CRITICAL")
+            self.assertEqual(str(step["with"]["exit-code"]), "1")
+            self.assertNotIn("ignore-unfixed", step["with"])
+            self.assertEqual(step["env"]["TRIVY_IGNORE_UNFIXED"], "false")
+
+    def test_dockerignore_parser_exclusion_never_skips_vulnerability_or_secret_scanning(self):
+        scanners = [step for step in self.workflow["jobs"]["scan"]["steps"] if step.get("uses", "").startswith("aquasecurity/trivy-action@")]
+        self.assertEqual(len(scanners), 2)
+        dependency_scan, configuration_scan = scanners
+        self.assertNotIn("skip-files", dependency_scan["with"])
+        self.assertNotIn("skip-dirs", dependency_scan["with"])
+        self.assertNotIn("TRIVY_SKIP_FILES", dependency_scan.get("env", {}))
+        self.assertNotIn("TRIVY_SKIP_DIRS", dependency_scan.get("env", {}))
+        self.assertEqual(configuration_scan["with"]["skip-files"], "**/*.dockerignore")
+        self.assertNotIn("skip-dirs", configuration_scan["with"])
+
+    def test_configuration_scan_still_runs_after_dependency_findings_without_waiving_failure(self):
+        scanners = [step for step in self.workflow["jobs"]["scan"]["steps"] if step.get("uses", "").startswith("aquasecurity/trivy-action@")]
+        self.assertEqual(len(scanners), 2)
+        self.assertEqual(scanners[1]["if"], "${{ !cancelled() }}")
+        self.assertNotIn("continue-on-error", self.rendered)
+
+    def test_dependency_scan_discovers_split_and_suffixed_pip_requirements(self):
+        scanners = [step for step in self.workflow["jobs"]["scan"]["steps"] if step.get("uses", "").startswith("aquasecurity/trivy-action@")]
+        self.assertEqual(scanners[0]["with"]["scanners"], "vuln,secret")
+        self.assertEqual(scanners[0]["env"].get("TRIVY_FILE_PATTERNS"),
+                         r"pip:(^|/)(requirements/[^/]+\.(txt|lock)|requirements[^/]*\.txt)$")
+        # The pinned action has no file-patterns input; Trivy's supported env
+        # flag is additive and must not alter the separate configuration pass.
+        self.assertNotIn("file-patterns", scanners[0]["with"])
+        self.assertNotIn("TRIVY_FILE_PATTERNS", scanners[1]["env"])
 
     def test_scan_uses_trusted_external_configuration_and_no_mutable_cache(self):
         scan = self.workflow["jobs"]["scan"]
-        step = next(step for step in scan["steps"] if step.get("uses", "").startswith("aquasecurity/trivy-action@"))
-        self.assertEqual(str(step["with"]["cache"]).lower(), "false")
-        self.assertEqual(step["with"]["cache-dir"], "${{ runner.temp }}/feature-quality-trivy/cache")
-        self.assertEqual(step["with"]["trivy-config"], "${{ runner.temp }}/feature-quality-trivy/trivy.yaml")
-        self.assertEqual(step["env"]["TRIVY_IGNOREFILE"], "${{ runner.temp }}/feature-quality-trivy/ignore")
-        self.assertEqual(step["env"]["TRIVY_SECRET_CONFIG"], "${{ runner.temp }}/feature-quality-trivy/secret.yaml")
-        self.assertEqual(step["with"]["version"], "v0.70.0")
-        self.assertNotIn("trivyignores", step["with"])
+        scanners = [step for step in scan["steps"] if step.get("uses", "").startswith("aquasecurity/trivy-action@")]
+        self.assertEqual(len(scanners), 2)
+        for step in scanners:
+            self.assertEqual(str(step["with"]["cache"]).lower(), "false")
+            self.assertEqual(step["with"]["cache-dir"], "${{ runner.temp }}/feature-quality-trivy/cache")
+            self.assertEqual(step["with"]["trivy-config"], "${{ runner.temp }}/feature-quality-trivy/trivy.yaml")
+            self.assertEqual(step["env"]["TRIVY_IGNOREFILE"], "${{ runner.temp }}/feature-quality-trivy/ignore")
+            self.assertEqual(step["env"]["TRIVY_SECRET_CONFIG"], "${{ runner.temp }}/feature-quality-trivy/secret.yaml")
+            self.assertEqual(step["with"]["version"], "v0.70.0")
+            self.assertNotIn("trivyignores", step["with"])
 
     def test_scanner_config_creation_ignores_candidate_suppressions(self):
         steps = self.workflow["jobs"]["scan"]["steps"]
@@ -170,7 +218,7 @@ class WorkflowContractTests(unittest.TestCase):
         required = self.workflow["jobs"]["required"]
         self.assertEqual(required["name"], "Feature quality / required")
         self.assertEqual(required["if"], "${{ always() }}")
-        self.assertEqual(set(required["needs"]), {"plan", "run", "scan"})
+        self.assertEqual(set(required["needs"]), {"plan", "dependencies", "run", "scan"})
         self.assertIn("run", required["steps"][0])
         self.assertEqual(required["steps"][0]["env"]["NEEDS_JSON"], "${{ toJSON(needs) }}")
 
@@ -196,7 +244,7 @@ class WorkflowContractTests(unittest.TestCase):
 
     def test_dependency_barrier_executes_and_only_accepts_all_success(self):
         script = self.workflow["jobs"]["required"]["steps"][0]["run"]
-        passing = {name: {"result": "success"} for name in ("plan", "run", "scan")}
+        passing = {name: {"result": "success"} for name in ("plan", "dependencies", "run", "scan")}
         result = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", script], env=dict(os.environ, NEEDS_JSON=json.dumps(passing)), text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         for name in passing:
@@ -268,7 +316,7 @@ class BaselineWorkflowTests(unittest.TestCase):
         self.assertEqual(set(baseline["on"]), {"workflow_call"})
         self.assertEqual(baseline["permissions"], {"contents": "read"})
         self.assertEqual(baseline["env"], required["env"])
-        expected = copy.deepcopy({name: required["jobs"][name] for name in ("plan", "run")})
+        expected = copy.deepcopy({name: required["jobs"][name] for name in ("plan", "dependencies", "run")})
         step = next(step for step in expected['run']['steps'] if step.get('with', {}).get('mode') == 'run')
         step['with']['mode'] = 'baseline'
         self.assertEqual(baseline["jobs"], expected)
@@ -288,6 +336,64 @@ class BaselineWorkflowTests(unittest.TestCase):
         self.assertNotIn("secrets", repository["jobs"]["tests"])
         self.assertNotIn("secrets: inherit", text)
         self.assertNotIn("pull_request_target", text)
+
+    def test_dependency_caller_forwards_only_named_read_secret_when_requested(self):
+        text = self.module.generate_repository_workflow(ACTION_SHA, dependencies=True)
+        caller = yaml.safe_load(text)
+        self.assertEqual(caller['jobs']['tests']['secrets'],
+                         {'XPOS_CI_READ_TOKEN': '${{ secrets.XPOS_CI_READ_TOKEN }}'})
+        baseline = yaml.safe_load(self.module.generate_baseline_workflow(ACTION_SHA))
+        self.assertEqual(baseline['on']['workflow_call']['secrets']['XPOS_CI_READ_TOKEN']['required'], False)
+        self.assertNotIn('secrets: inherit', text)
+
+    def test_dependency_checkouts_are_siblings_before_untrusted_execution(self):
+        required = yaml.safe_load(self.module.generate_workflow(action_sha=ACTION_SHA))
+        steps = required['jobs']['run']['steps']
+        self.assertEqual(steps[0]['with']['path'], 'candidate')
+        candidate_execution = next(i for i, step in enumerate(steps) if step.get('with', {}).get('mode') == 'run')
+        self.assertNotIn('secrets.', json.dumps(required['jobs']['run']))
+        trusted_steps = required['jobs']['dependencies']['steps']
+        checkouts = [(i, step) for i, step in enumerate(trusted_steps) if 'repository' in step.get('with', {})]
+        self.assertFalse(any('run' in step for step in trusted_steps))
+        self.assertEqual(required['jobs']['dependencies']['needs'], ['plan'])
+        restore_index = next(i for i, step in enumerate(steps) if step.get('with', {}).get('mode') == 'dependencies-restore')
+        self.assertLess(restore_index, candidate_execution)
+        upload = next(step for step in trusted_steps if step.get('uses', '').startswith('actions/upload-artifact@'))
+        download = next(step for step in steps if step.get('uses', '').startswith('actions/download-artifact@'))
+        self.assertEqual(upload['with']['name'], 'feature-quality-dependencies')
+        self.assertEqual(download['with']['artifact-ids'], '${{ needs.dependencies.outputs.artifact_id }}')
+        self.assertEqual(required['jobs']['dependencies']['outputs']['artifact_id'], '${{ steps.sources.outputs.artifact-id }}')
+        self.assertEqual(upload['id'], 'sources')
+        self.assertNotIn('overwrite', upload['with'])
+        self.assertEqual(len(checkouts), 2)
+        for slot, (index, step) in enumerate(checkouts, 1):
+            prefix = 'needs.plan.outputs.dependency_'+str(slot)+'_'
+            self.assertEqual(step['if'], '${{ '+prefix+"repository != '' }}")
+            for field in ('repository', 'path'):
+                self.assertEqual(step['with'][field], '${{ '+prefix+field+' }}')
+            self.assertEqual(step['with']['ref'], '${{ '+prefix+'sha }}')
+            self.assertEqual(step['with']['sparse-checkout'], '${{ '+prefix+'sparse_checkout }}')
+            self.assertIs(step['with']['sparse-checkout-cone-mode'], False)
+            self.assertIs(step['with']['persist-credentials'], False)
+        for job in required['jobs'].values():
+            for step in job['steps']:
+                if 'repository' not in step.get('with', {}):
+                    self.assertNotIn('XPOS_CI_READ_TOKEN', json.dumps(step))
+        self.assertNotIn('XPOS_CI_READ_TOKEN', json.dumps(required.get('env', {})))
+
+    def test_native_dependency_broker_exports_artifact_id_without_candidate_execution(self):
+        broker = yaml.safe_load(self.module.generate_dependency_workflow(ACTION_SHA))
+        self.assertEqual(set(broker['jobs']), {'plan', 'dependencies'})
+        self.assertEqual(broker['on']['workflow_call']['outputs']['artifact_id']['value'],
+                         '${{ jobs.dependencies.outputs.artifact_id }}')
+        self.assertEqual(broker['permissions'], {'contents': 'read'})
+        for job in broker['jobs'].values():
+            for step in job['steps']:
+                self.assertNotIn('run', step)
+                if 'uses' in step:
+                    self.assertRegex(step['uses'], r'@[0-9a-f]{40}$')
+                self.assertNotIn(step.get('with', {}).get('mode'), ('run', 'baseline'))
+        self.assertNotIn('secrets: inherit', self.module.generate_dependency_workflow(ACTION_SHA))
 
     def test_both_generators_refuse_mutable_placeholder_or_injected_refs(self):
         invalid_refs = ["main", "refs/heads/main", "0" * 40, "f" * 40, "deadbeef" * 5, "<POLICY_SHA>", ACTION_SHA + "\n", ACTION_SHA + ";echo hacked", None]

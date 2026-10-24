@@ -1,0 +1,15 @@
+# Repository baseline caller: .github/workflows/feature-tests.yml
+# Public distribution; only centrally approved profiles can pass.
+# Baseline execution records tests only; the separate required workflow gates merging.
+name: Feature tests
+
+"on":
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    uses: xpossystems/ci-policy-public/.github/workflows/category-tests.yml@e2f19004def1150d876dc4d74a70de8f42aebcd2

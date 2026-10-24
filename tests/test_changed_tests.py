@@ -244,7 +244,7 @@ class ChangedTestsGitIntegrationTests(unittest.TestCase):
     def entry_fixture(self):
         trusted = self.directory / "trusted-policy"
         trusted.mkdir()
-        for name in ("entry.py", "run_suite.py", "quality_gate.py", "changed_tests.py"):
+        for name in ("entry.py", "run_suite.py", "quality_gate.py", "changed_tests.py", "ci_configuration.py"):
             shutil.copyfile(POLICY_ROOT / name, trusted / name)
         runner = '''import os, sys, unittest, xml.etree.ElementTree as ET
 sys.path.insert(0, os.getcwd())

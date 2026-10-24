@@ -19,6 +19,7 @@ import urllib.request
 import quality_gate
 import run_suite
 import changed_tests
+import ci_configuration
 
 CATEGORIES = ('unit', 'integration', 'security')
 START = '<!-- ci-evidence:start -->'
@@ -174,6 +175,17 @@ def artifact_summary(root, commit, repository, profile):
     return artifact_data.validate_artifact_tree(root, commit, repository, profile)
 
 
+def classify_change(root, base_sha, head_sha, repository, profile):
+    manifest_path = HERE/'ci-configurations.json'
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text(), object_pairs_hook=_object)
+        result = ci_configuration.classify_configuration(root=root, base_sha=base_sha,
+            head_sha=head_sha, repository=repository, manifest=manifest, test_paths=profile.get('test_paths'))
+        if result is not None:
+            return result
+    return changed_tests.check_changed_tests(root, base_sha, head_sha, profile.get('test_paths'))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument('--mode', required=True, choices=['plan', 'baseline', 'run', 'verify'])
@@ -210,11 +222,11 @@ def main(argv=None):
             # Baseline supplies honest red/green execution during development;
             # only the separate required workflow can grant merge approval.
             if args.mode == 'run':
-                changed_tests.check_changed_tests(
+                classify_change(
                     args.root,
                     os.environ.get('QUALITY_BASE_SHA', ''),
                     os.environ.get('QUALITY_HEAD_SHA', ''),
-                    profile.get('test_paths'),
+                    repository, profile,
                 )
             reports.mkdir(parents=True, exist_ok=True)
             for command in profile.get('prepare', []):
@@ -245,11 +257,11 @@ def main(argv=None):
             return 0
         # Recompute from the clean verifier checkout. Never trust a classification
         # artifact produced in the job that executed candidate test code.
-        change = changed_tests.check_changed_tests(args.root, base_sha, head_sha, profile.get('test_paths'))
-        if change['classification'] == 'documentation':
+        change = classify_change(args.root, base_sha, head_sha, repository, profile)
+        if change['classification'] in ('documentation', 'ci_configuration', 'test_maintenance'):
             counts = quality_gate.validate_reports(unit_report=reports/'unit.xml',
                 integration_report=reports/'integration.xml', security_report=reports/'security.xml')
-            print(json.dumps({'status': 'validated', 'classification': 'documentation',
+            print(json.dumps({'status': 'validated', 'classification': change['classification'],
                 'repository': repository, 'head_sha': head_sha, 'executed': counts,
                 'feature_declarations_required': False}, sort_keys=True))
             return 0
