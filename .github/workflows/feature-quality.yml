@@ -33,7 +33,7 @@ jobs:
           fetch-depth: 0
       - name: Validate the feature quality contract
         id: plan
-        uses: xpossystems/ci-policy-public@41de2f7837d8aa397b12ff09624c00ed8c25e0ed
+        uses: xpossystems/ci-policy-public@c45b756e5d4340ef0010c63028682ff8f170f013
         with:
           mode: plan
           root: ${{ github.workspace }}
@@ -54,7 +54,7 @@ jobs:
         with:
           python-version: ${{ needs.plan.outputs.python_version }}
       - name: Run unit, integration, and security suites
-        uses: xpossystems/ci-policy-public@41de2f7837d8aa397b12ff09624c00ed8c25e0ed
+        uses: xpossystems/ci-policy-public@c45b756e5d4340ef0010c63028682ff8f170f013
         with:
           mode: run
           root: ${{ github.workspace }}
@@ -91,7 +91,7 @@ jobs:
               path.write_text(content)
               path.chmod(0o444)
           PY
-      - name: Scan dependencies, configuration, and secrets
+      - name: Scan dependencies and secrets in every file
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         env:
           TRIVY_IGNOREFILE: ${{ runner.temp }}/feature-quality-trivy/ignore
@@ -100,7 +100,27 @@ jobs:
         with:
           scan-type: fs
           scan-ref: .
-          scanners: vuln,misconfig,secret
+          scanners: vuln,secret
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+          version: v0.70.0
+          cache: 'false'
+          cache-dir: ${{ runner.temp }}/feature-quality-trivy/cache
+          trivy-config: ${{ runner.temp }}/feature-quality-trivy/trivy.yaml
+      # Trivy treats Dockerfile.dockerignore as Dockerfile source. Exclude only
+      # those parser inputs here; the separate secret/dependency pass skips none.
+      - name: Scan configuration with Docker ignore files excluded from parsing
+        if: ${{ !cancelled() }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        env:
+          TRIVY_IGNOREFILE: ${{ runner.temp }}/feature-quality-trivy/ignore
+          TRIVY_SECRET_CONFIG: ${{ runner.temp }}/feature-quality-trivy/secret.yaml
+          TRIVY_IGNORE_UNFIXED: 'false'
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: misconfig
+          skip-files: '**/*.dockerignore'
           exit-code: '1'
           severity: HIGH,CRITICAL
           version: v0.70.0
@@ -146,7 +166,7 @@ jobs:
           name: feature-quality-evidence
           path: ${{ runner.temp }}/quality-reports
       - name: Verify reports and TDD/break-test evidence
-        uses: xpossystems/ci-policy-public@41de2f7837d8aa397b12ff09624c00ed8c25e0ed
+        uses: xpossystems/ci-policy-public@c45b756e5d4340ef0010c63028682ff8f170f013
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:

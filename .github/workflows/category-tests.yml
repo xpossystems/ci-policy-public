@@ -32,7 +32,7 @@ jobs:
           fetch-depth: 0
       - name: Validate the feature quality contract
         id: plan
-        uses: xpossystems/ci-policy-public@41de2f7837d8aa397b12ff09624c00ed8c25e0ed
+        uses: xpossystems/ci-policy-public@c45b756e5d4340ef0010c63028682ff8f170f013
         with:
           mode: plan
           root: ${{ github.workspace }}
@@ -53,7 +53,7 @@ jobs:
         with:
           python-version: ${{ needs.plan.outputs.python_version }}
       - name: Run unit, integration, and security suites
-        uses: xpossystems/ci-policy-public@41de2f7837d8aa397b12ff09624c00ed8c25e0ed
+        uses: xpossystems/ci-policy-public@c45b756e5d4340ef0010c63028682ff8f170f013
         with:
           mode: baseline
           root: ${{ github.workspace }}
